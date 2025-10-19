@@ -89,14 +89,6 @@ class ProjectManager:
         return {"status": "error", "message": "Project not found."}
 
 
-    def list_projects(self) -> dict:
-        if not self.projects:
-            return {"status": "info", "message": "No projects found."}
-        result = ["📁 Projects:"]
-        for p in sorted(self.projects, key=lambda x: x.created_at):
-            result.append(f"- ID: {p.id}, Name: {p.name}, Tasks: {len(p.tasks)}, Created: {p.created_at}")
-        return {"status": "success", "message": "\n".join(result)}
-
     def get_project_tasks(self, project_id: str) -> Tuple[Optional[List[Task]], Optional[str]]:
         for project in self.projects:
             if project.id == project_id:
