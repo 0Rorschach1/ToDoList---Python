@@ -1,7 +1,6 @@
 import os
-import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from dotenv import load_dotenv
 
 from user import User
@@ -51,32 +50,37 @@ class Project:
             self.container_user.projects.remove(self)
         del self
 
+    def edit(self, *,
+             new_name: Optional[str] = None,
+             new_description: Optional[str] = None,
+             new_user: Optional[User] = None):
+        """
+        Edit project attributes.
+        :param new_name: New name of the project (must be unique for the user)
+        :param new_description: New description
+        :param new_user: Change container_user
+        """
+        # Change name
+        if new_name:
+            new_name = new_name.strip()
+            if self.container_user:
+                # Ensure uniqueness among user's projects
+                for p in self.container_user.projects:
+                    if p != self and p.name == new_name:
+                        raise ValueError("Project name must be unique for this user.")
+            self.name = new_name
 
-class ProjectManager:
-    def __init__(self):
-        self.projects: List[Project] = []
-        try:
-            self.max_projects = int(os.getenv("MAX_NUMBER_OF_PROJECTS", 10))
-        except ValueError:
-            self.max_projects = 10
+        # Change description
+        if new_description:
+            self.description = new_description.strip()
 
-    def is_project_name_unique(self, name: str, user: Optional[User] = None, exclude_name: Optional[str] = None) -> bool:
-        """Check uniqueness for a user (if provided)"""
-        projects = user.projects if user else self.projects
-        return all(p.name != name or (exclude_name and p.name == exclude_name) for p in projects)
+        # Change user
+        if new_user:
+            self.set_user(new_user)
 
-    def edit_project(self, project_name: str, new_name: str, new_description: str) -> dict:
-        for project in self.projects:
-            if project.name == project_name:
-                if not self.is_project_name_unique(new_name, project.container_user, exclude_name=project_name):
-                    return {"status": "error", "message": "Project name must be unique."}
-                project.name = new_name.strip()
-                project.description = new_description.strip()
-                return {"status": "success", "message": f"Project '{new_name}' updated successfully."}
-        return {"status": "error", "message": "Project not found."}
-
-    def get_project_tasks(self, project_name: str) -> Tuple[Optional[List[Task]], Optional[str]]:
-        for project in self.projects:
-            if project.name == project_name:
-                return project.tasks, project.name
-        return None, None
+    def show_tasks(self) -> List[Task]:
+        """
+        Return a list of tasks for this project.
+        :return: List of Task instances
+        """
+        return self.tasks
