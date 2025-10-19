@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
 
 from user import User
@@ -14,7 +14,6 @@ load_dotenv()
 
 class Project:
     def __init__(self, *, name: str, description: str, container_user: Optional[User] = None):
-        self.id = str(uuid.uuid4())[:8]
         self.name = name.strip()
         self.description = description.strip()
         self.created_at = datetime.now()
@@ -61,36 +60,23 @@ class ProjectManager:
         except ValueError:
             self.max_projects = 10
 
-    def is_project_name_unique(self, name: str, user: Optional[User] = None, exclude_id: Optional[str] = None) -> bool:
+    def is_project_name_unique(self, name: str, user: Optional[User] = None, exclude_name: Optional[str] = None) -> bool:
         """Check uniqueness for a user (if provided)"""
         projects = user.projects if user else self.projects
-        return all(p.name != name or (exclude_id and p.id == exclude_id) for p in projects)
+        return all(p.name != name or (exclude_name and p.name == exclude_name) for p in projects)
 
-    def create_project(self, name: str, description: str, user: Optional[User] = None) -> dict:
-        if len(name.strip()) < 30 or len(description.strip()) < 150:
-            return {"status": "error", "message": "Name ≥30 chars, description ≥150 chars required."}
-        if not self.is_project_name_unique(name, user):
-            return {"status": "error", "message": "Project name must be unique."}
-        if len(self.projects) >= self.max_projects:
-            return {"status": "error", "message": f"Max {self.max_projects} projects reached."}
-
-        project = Project(name=name, description=description, container_user=user)
-        self.projects.append(project)
-        return {"status": "success", "message": f"Project '{name}' created successfully."}
-
-    def edit_project(self, project_id: str, name: str, description: str) -> dict:
+    def edit_project(self, project_name: str, new_name: str, new_description: str) -> dict:
         for project in self.projects:
-            if project.id == project_id:
-                if not self.is_project_name_unique(name, project.container_user, exclude_id=project_id):
+            if project.name == project_name:
+                if not self.is_project_name_unique(new_name, project.container_user, exclude_name=project_name):
                     return {"status": "error", "message": "Project name must be unique."}
-                project.name = name.strip()
-                project.description = description.strip()
-                return {"status": "success", "message": f"Project '{name}' updated successfully."}
+                project.name = new_name.strip()
+                project.description = new_description.strip()
+                return {"status": "success", "message": f"Project '{new_name}' updated successfully."}
         return {"status": "error", "message": "Project not found."}
 
-
-    def get_project_tasks(self, project_id: str) -> Tuple[Optional[List[Task]], Optional[str]]:
+    def get_project_tasks(self, project_name: str) -> Tuple[Optional[List[Task]], Optional[str]]:
         for project in self.projects:
-            if project.id == project_id:
+            if project.name == project_name:
                 return project.tasks, project.name
         return None, None
