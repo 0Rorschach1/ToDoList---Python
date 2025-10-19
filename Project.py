@@ -1,148 +1,104 @@
 import os
-
+import uuid
+from datetime import datetime
+from typing import List, Optional, Tuple, Any
 from dotenv import load_dotenv
 
 from user import User
-
 from task import Task
-
 from exceptions import MaxLimitExceededError
 
+# Load environment variables
+load_dotenv()
 
 
 class Project:
-
-    def __init__(self, *, project_name: str, project_description: str = None,
-                 container_user: "User" = None):
-        """
-        Initialize a Project instance with optional name, description, and associated user.
-        param project_name: Name for the project.
-        param project_description: Optional description for the project.
-        param container_user: Optional User instance to associate with the project.
-        return: None
-        raise ValueError: If project_name is not unique within the user's projects.
-        raise ValueError: If project_name exceeds 30 characters.
-        raise ValueError: If project_description exceeds 150 characters.
-        raise ValueError: If container_user is not a User instance.
-        """
-        self._project_name = None
-        self._project_description = None
-        self._project_tasks = []
-        self._container_user = None
-
-        if project_name:
-            self.project_name = project_name
-        if project_description:
-            self.project_description = project_description
+    def __init__(self, *, name: str, description: str, container_user: Optional[User] = None):
+        self.id = str(uuid.uuid4())[:8]
+        self.name = name.strip()
+        self.description = description.strip()
+        self.created_at = datetime.now()
+        self.tasks: List[Task] = []
+        self.container_user: Optional[User] = None
         if container_user:
-            self.container_user = container_user
+            self.set_user(container_user)
 
-    @property
-    def project_name(self):
-        return self._project_name
-
-    @project_name.setter
-    def project_name(self, value: str) -> None:
-        # Ensure project name is unique within the user's projects
-        if self._container_user:
-            for project in self._container_user.projects:
-                if project.project_name == value and project != self:
-                    raise ValueError("Project name must be unique within the user's projects.")
-        # Ensure project name length does not exceed the limit
-        if len(value) > 30:
-            raise ValueError("Project name must be 30 characters or fewer.")
-        self._project_name = value
-
-    @property
-    def project_description(self):
-        return self._project_description
-
-    @project_description.setter
-    def project_description(self, value: str) -> None:
-        # Ensure project description length does not exceed the limit
-        if len(value) > 150:
-            raise ValueError("Project description must be 150 characters or fewer.")
-        self._project_description = value
-
-    @property
-    def project_tasks(self):
-        return self._project_tasks
-
-    @property
-    def container_user(self):
-        return self._container_user
-
-    @container_user.setter
-    def container_user(self, value: "User") -> None:
-        # Ensure the value is a User instance
-        if not isinstance(value, User):
+    def set_user(self, user: User):
+        if not isinstance(user, User):
             raise ValueError("container_user must be a User instance.")
-        value.add_project(self)
-        # Remove from previous user's project list if applicable
-        if self._container_user:
-            if self in self._container_user.projects:
-                self._container_user.projects.remove(self)
-        self._container_user = value
+        if self.container_user and self in self.container_user.projects:
+            self.container_user.projects.remove(self)
+        self.container_user = user
+        user.projects.append(self)
 
-
-    def set_name(self, new_name: str) -> None:
-        self.project_name = new_name
-
-    def set_description(self, new_description: str) -> None:
-        self.project_description = new_description
+    def add_task(self, task: Task):
+        if not isinstance(task, Task):
+            raise ValueError("Only Task instances can be added.")
+        if task in self.tasks:
+            raise ValueError("Task already exists in this project.")
+        max_tasks = int(os.getenv("MAX_NUMBER_OF_TASKS", 20))
+        if len(self.tasks) >= max_tasks:
+            raise MaxLimitExceededError(f"Cannot add more than {max_tasks} tasks to a project.")
+        task.container_project = self
+        self.tasks.append(task)
 
     def delete_project(self):
-        # Delete all tasks associated with the project
-        for task in self.project_tasks:
+        # Cascade delete tasks
+        for task in self.tasks:
             task.delete_task()
-        # Remove the project from the user's project list
+        self.tasks.clear()
+        # Remove project from user's list
         if self.container_user and self in self.container_user.projects:
             self.container_user.projects.remove(self)
         del self
 
-    def add_task(self, task: "Task") -> None:
-        """
-        Add a Task instance to the project's task list.
-        param task: Task instance to be added.
-        return: None
-        raise ValueError: If the task is not a Task instance.
-        raise MaxLimitExceededError: If adding the task exceeds the maximum limit.
-        raise ValueError: If the task is already in the project's task list.
-        """
 
-        # Check if the task is a Task instance
-        if not isinstance(task, Task):
-            raise ValueError("Only Task instances can be added.")
-        # Check if the task is already in the project's task list
-        if task in self.project_tasks:
-            raise ValueError("Task is already in the project's task list.")
-        # Check for limit on number of tasks
-        load_dotenv()
-        max_tasks = int(os.getenv("MAX_NUMBER_OF_TASKS", 20))
-        if len(self.project_tasks) >= max_tasks:
-            raise MaxLimitExceededError(f"Cannot add more than {max_tasks} tasks to a project.")
-        task.container_project = self
-        self.project_tasks.append(task)
+class ProjectManager:
+    def __init__(self):
+        self.projects: List[Project] = []
+        try:
+            self.max_projects = int(os.getenv("MAX_NUMBER_OF_PROJECTS", 10))
+        except ValueError:
+            self.max_projects = 10
 
-    def show_tasks(self) -> None:
-        """
-        Display all tasks associated with the project.
-        return: None
-        """
+    def is_project_name_unique(self, name: str, user: Optional[User] = None, exclude_id: Optional[str] = None) -> bool:
+        """Check uniqueness for a user (if provided)"""
+        projects = user.projects if user else self.projects
+        return all(p.name != name or (exclude_id and p.id == exclude_id) for p in projects)
 
-        # Check if there are any tasks
-        if len(self.project_tasks) == 0:
-            print(f"No tasks in Project '{self.project_name}'.")
-            return
-        # List each task with its details
-        result_string = f"Tasks in Project '{self.project_name}':\n"
-        for task in self.project_tasks:
-            result_string += (f"{task.task_id} - {task.task_name} - {task.task_description} | "
-                              f"Status: {task.task_status} | Due: {task.task_due_date}\n")
-        print(result_string)
+    def create_project(self, name: str, description: str, user: Optional[User] = None) -> dict:
+        if len(name.strip()) < 30 or len(description.strip()) < 150:
+            return {"status": "error", "message": "Name ≥30 chars, description ≥150 chars required."}
+        if not self.is_project_name_unique(name, user):
+            return {"status": "error", "message": "Project name must be unique."}
+        if len(self.projects) >= self.max_projects:
+            return {"status": "error", "message": f"Max {self.max_projects} projects reached."}
 
-    def __str__(self):
-        return f"Project: {self.project_name} - {self.project_description}"
+        project = Project(name=name, description=description, container_user=user)
+        self.projects.append(project)
+        return {"status": "success", "message": f"Project '{name}' created successfully."}
 
-    def __repr__(self):
-        return self.__str__()
+    def edit_project(self, project_id: str, name: str, description: str) -> dict:
+        for project in self.projects:
+            if project.id == project_id:
+                if not self.is_project_name_unique(name, project.container_user, exclude_id=project_id):
+                    return {"status": "error", "message": "Project name must be unique."}
+                project.name = name.strip()
+                project.description = description.strip()
+                return {"status": "success", "message": f"Project '{name}' updated successfully."}
+        return {"status": "error", "message": "Project not found."}
+
+
+    def list_projects(self) -> dict:
+        if not self.projects:
+            return {"status": "info", "message": "No projects found."}
+        result = ["📁 Projects:"]
+        for p in sorted(self.projects, key=lambda x: x.created_at):
+            result.append(f"- ID: {p.id}, Name: {p.name}, Tasks: {len(p.tasks)}, Created: {p.created_at}")
+        return {"status": "success", "message": "\n".join(result)}
+
+    def get_project_tasks(self, project_id: str) -> Tuple[Optional[List[Task]], Optional[str]]:
+        for project in self.projects:
+            if project.id == project_id:
+                return project.tasks, project.name
+        return None, None
